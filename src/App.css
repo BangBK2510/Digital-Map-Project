@@ -36,3 +36,19 @@
     transform: rotate(360deg);
   }
 }
+
+.maplibregl-popup-content {
+  max-width: none !important; /* Cho phép nội dung quyết định chiều rộng */
+  padding: 0 !important; /* Loại bỏ padding mặc định của MapLibre để padding của bạn có hiệu lực hoàn toàn */
+  /* Hoặc bạn có thể đặt một giá trị max-width cụ thể lớn hơn: */
+  /* max-width: 350px !important; */
+  /* padding: 5px !important; */ /* Nếu bạn muốn giữ lại một chút padding của MapLibre */
+}
+
+/* Tùy chọn: Thêm style cho div chính bên trong HTML của bạn nếu cần */
+/* Ví dụ, nếu bạn thêm class "weather-popup-container" cho div chính trong popupHTML */
+/*
+.weather-popup-container {
+  background-color: white; // Đảm bảo nền trắng nếu padding của MapLibre bị loại bỏ
+}
+*/
