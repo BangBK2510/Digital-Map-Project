@@ -13,7 +13,6 @@ code {
 }
 
 .maplibregl-popup-content {
-  max-width: none !important; /* Quan trọng: Cho phép nội dung quyết định chiều rộng tối đa */
-  padding: 0 !important; /* Loại bỏ padding mặc định của MapLibre, để padding trong HTML của bạn có hiệu lực */
-  /* Bạn cũng có thể thử đặt một min-width ở đây nếu cần, nhưng thường thì min-width của div nội dung là đủ */
+  max-width: none !important; /* Cho phép nội dung quyết định chiều rộng tối đa */
+  padding: 0 !important; /* Loại bỏ padding mặc định của MapLibre, để padding trong HTML có hiệu lực */
   min-width: 320px !important;  }
