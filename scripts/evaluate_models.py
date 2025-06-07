@@ -27,7 +27,7 @@ def group_weather_condition_3_classes(symbol_code):
     if not isinstance(symbol_code, str): return 'Trời mây'
     s_lower = symbol_code.lower()
     if any(p in s_lower for p in ['rain', 'sleet', 'shower', 'snow', 'drizzle']): return 'Mưa'
-    if any(p in s_lower for p in ['clearsky_day', 'fair_day']): return 'Nắng'
+    if any(p in s_lower for p in ['clearsky_day', 'fair_day', 'clearsky']): return 'Nắng'
     return 'Trời mây'
 
 def preprocess_met_df(df):
@@ -39,6 +39,10 @@ def preprocess_met_df(df):
 
 def create_training_samples(df, lags):
     X_list, y_temp_list, y_cond_list = [], [], []
+    # Đảm bảo có đủ dữ liệu để tạo ít nhất một mẫu
+    if len(df) <= lags:
+        return np.array([]), np.array([]), np.array([])
+        
     for i in range(lags, len(df)):
         past, target = df.iloc[i-lags:i], df.iloc[i]
         feat = []
@@ -67,17 +71,37 @@ if __name__ == "__main__":
         if len(df_city) < 50:
             print(f"  CẢNH BÁO: Dữ liệu quá ít ({len(df_city)} dòng), bỏ qua.")
             continue
+            
         df_processed = preprocess_met_df(df_city)
         X, y_temp, y_cond = create_training_samples(df_processed, lags=LAGS)
+
+        # Kiểm tra nếu không tạo được mẫu nào
+        if X.shape[0] == 0:
+            print(f"  CẢNH BÁO: Không đủ dữ liệu để tạo mẫu huấn luyện sau khi xử lý, bỏ qua.")
+            continue
+
         if len(np.unique(y_cond)) < 2:
              print(f"  CẢNH BÁO: Chỉ có 1 lớp tình trạng, không thể đánh giá độ chính xác.")
              continue
+             
         X = np.nan_to_num(X)
         le = LabelEncoder()
         y_cond_enc = le.fit_transform(y_cond)
         
-        X_train, X_test, y_temp_train, y_temp_test, y_cond_train, y_cond_test = train_test_split(
-            X, y_temp, y_cond_enc, test_size=0.25, random_state=42, stratify=y_cond_enc)
+        # *** SỬA LỖI TẠI ĐÂY ***
+        # Thử chia dữ liệu với stratify, nếu thất bại thì chia theo cách thông thường
+        try:
+            X_train, X_test, y_temp_train, y_temp_test, y_cond_train, y_cond_test = train_test_split(
+                X, y_temp, y_cond_enc, test_size=0.25, random_state=42, stratify=y_cond_enc)
+        except ValueError:
+            print(f"  CẢNH BÁO: Không thể chia dữ liệu theo stratify (số mẫu quá ít trong một lớp). Chuyển sang chia thông thường.")
+            X_train, X_test, y_temp_train, y_temp_test, y_cond_train, y_cond_test = train_test_split(
+                X, y_temp, y_cond_enc, test_size=0.25, random_state=42)
+
+        # Kiểm tra nếu tập test rỗng
+        if len(X_test) == 0:
+            print(f"  CẢNH BÁO: Tập kiểm tra rỗng, không thể đánh giá. Bỏ qua.")
+            continue
         
         reg = RandomForestRegressor(n_estimators=100, random_state=42).fit(X_train, y_temp_train)
         clf = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced').fit(X_train, y_cond_train)
@@ -87,7 +111,13 @@ if __name__ == "__main__":
 
     if evaluation_results:
         new_log_df = pd.DataFrame(evaluation_results)
-        log_df = pd.concat([pd.read_csv(LOG_FILE), new_log_df]) if os.path.exists(LOG_FILE) else new_log_df
+        # Sửa lỗi concat nếu file log cũ không tồn tại
+        try:
+            log_df = pd.read_csv(LOG_FILE)
+            log_df = pd.concat([log_df, new_log_df], ignore_index=True)
+        except FileNotFoundError:
+            log_df = new_log_df
+
         log_df.drop_duplicates(subset=['evaluation_date', 'city_name'], keep='last', inplace=True)
         log_df.to_csv(LOG_FILE, index=False)
         print(f"\nĐã lưu kết quả đánh giá vào file '{LOG_FILE}'.")
