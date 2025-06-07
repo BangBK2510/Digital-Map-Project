@@ -1,0 +1,18 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+.maplibregl-popup-content {
+  max-width: none !important; /* Cho phép nội dung quyết định chiều rộng tối đa */
+  padding: 0 !important; /* Loại bỏ padding mặc định của MapLibre, để padding trong HTML có hiệu lực */
+  min-width: 320px !important;  }
