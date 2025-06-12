@@ -1,7 +1,7 @@
 # Mục đích: Đọc dữ liệu từ file CSV của Open-Meteo, xử lý và huấn luyện
 # các mô hình AI dự báo thời tiết.
 # ==============================================================================
-# *** NÂNG CẤP: Thêm các features phức tạp hơn (tuần hoàn, trung bình trượt) ***
+# Thêm các features phức tạp hơn (tuần hoàn, trung bình trượt) ***
 # ==============================================================================
 import pandas as pd
 import lightgbm as lgb
@@ -20,7 +20,7 @@ ELEMENTS = [
     'wind_speed'
 ]
 
-# Đọc dữ liệu từ file mới
+# Đọc dữ liệu từ file
 input_filename = 'vietnam_weather_history.csv'
 try:
     df = pd.read_csv(input_filename, parse_dates=['time'])
@@ -31,13 +31,15 @@ except FileNotFoundError:
 
 print("Đã tải dữ liệu thành công.")
 
-# 1. Tiền xử lý và tạo Feature Engineering NÂNG CAO
+# 1. Tiền xử lý và tạo Feature Engineering 
 # =================================================
 print("Đang tiền xử lý và tạo features...")
 
 df = df.sort_values(by=['province', 'time']).reset_index(drop=True)
-df.fillna(method='ffill', inplace=True)
-df.fillna(method='bfill', inplace=True)
+
+# Cập nhật cú pháp fillna theo phiên bản mới của pandas ---
+df.ffill(inplace=True) # Điền giá trị rỗng bằng giá trị phía trên
+df.bfill(inplace=True) # Điền giá trị rỗng bằng giá trị phía dưới
 
 # Thêm các đặc trưng tuần hoàn (Cyclical Features) ***
 # Giúp mô hình hiểu tính chu kỳ của thời gian

@@ -1,8 +1,7 @@
 # Mục đích: Xây dựng máy chủ Flask để tải các mô hình AI đã huấn luyện
 # và cung cấp API dự báo thời tiết.
 # ==============================================================================
-# *** NÂNG CẤP: Cập nhật server để tương thích với mô hình đã cải tiến,
-# sử dụng các feature tuần hoàn và trung bình trượt khi dự báo.
+# Sử dụng các feature tuần hoàn và trung bình trượt khi dự báo.
 # ==============================================================================
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -12,6 +11,7 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 import numpy as np
 import pytz 
+import time 
 
 try:
     from province_data import PROVINCE_DATA
@@ -22,6 +22,10 @@ except ImportError:
 # --- Khởi tạo và tải các tài nguyên cần thiết ---
 app = Flask(__name__)
 CORS(app)
+
+# --- CẤU HÌNH CACHE ---
+FORECAST_CACHE = {} # Dictionary để lưu cache
+CACHE_DURATION_SECONDS = 15 * 60 # Thời gian cache tồn tại: 15 phút
 
 ELEMENTS = [
     'air_temperature',
@@ -35,11 +39,21 @@ ELEMENTS = [
 try:
     MODELS = {element: joblib.load(f'model_{element}.joblib') for element in ELEMENTS}
     PROVINCE_ENCODER = joblib.load('province_encoder.joblib')
-    print("--- Tất cả mô hình NÂNG CAO đã được tải thành công! ---")
+    print("--- Tất cả mô hình đã được tải thành công! ---")
 except FileNotFoundError as e:
     print(f"Lỗi: Không tìm thấy file mô hình. Vui lòng chạy 'train_weather_model.py' trước. Chi tiết: {e}")
     exit()
 
+# --- HÀM HỖ TRỢ: Tìm tỉnh gần nhất theo tọa độ ---
+def find_closest_province(lat, lon):
+    min_dist_sq = float('inf')
+    closest_province = None
+    for province_name, info in PROVINCE_DATA.items():
+        dist_sq = (lat - info['lat'])**2 + (lon - info['lon'])**2
+        if dist_sq < min_dist_sq:
+            min_dist_sq = dist_sq
+            closest_province = province_name
+    return closest_province
 
 def get_initial_features(lat, lon):
     url = "https://api.open-meteo.com/v1/forecast"
@@ -93,32 +107,49 @@ def create_features_for_prediction(df_history, province_name, prediction_time):
     return pd.DataFrame([features]).fillna(0)
 
 
-# *** BỔ SUNG 1: Thêm hàm logic để suy luận ra trạng thái thời tiết ***
 def determine_weather_symbol(precipitation, cloud_cover, hour):
-    """
-    Hàm suy luận ra mã biểu tượng thời tiết từ các thông số dự báo.
-    """
     is_day = 6 <= hour < 18
-
     if precipitation > 2.0: return 'heavyrain'
     if precipitation > 0.2: return 'rain'
-    
     if cloud_cover > 80: return 'cloudy'
     if cloud_cover > 40: return 'partlycloudy_day' if is_day else 'partlycloudy_night'
-        
     return 'clearsky_day' if is_day else 'clearsky_night'
 
 
 @app.route('/api/provinces', methods=['GET'])
 def get_provinces():
-    return jsonify(list(PROVINCE_DATA.keys()))
+    provinces_list = [
+        {"name": name, "lat": data["lat"], "lon": data["lon"]}
+        for name, data in PROVINCE_DATA.items()
+    ]
+    return jsonify(provinces_list)
 
 @app.route('/api/predict', methods=['GET'])
 def predict():
     province_name = request.args.get('province')
-    if not province_name or province_name not in PROVINCE_DATA:
-        return jsonify({"error": "Tên tỉnh không hợp lệ hoặc bị thiếu."}), 400
+    lat = request.args.get('lat', type=float)
+    lon = request.args.get('lon', type=float)
+
+    if lat is not None and lon is not None:
+        province_name = find_closest_province(lat, lon)
+        if not province_name:
+             return jsonify({"error": "Không tìm thấy tỉnh nào gần tọa độ đã cho."}), 400
+    elif province_name:
+        if province_name not in PROVINCE_DATA:
+            return jsonify({"error": f"Tên tỉnh '{province_name}' không hợp lệ."}), 400
+    else:
+        return jsonify({"error": "Cần cung cấp 'province' hoặc 'lat' và 'lon'."}), 400
     
+    # --- LOGIC CACHE: KIỂM TRA TRƯỚC KHI DỰ BÁO ---
+    current_time_epoch = time.time()
+    if province_name in FORECAST_CACHE:
+        cached_result, timestamp = FORECAST_CACHE[province_name]
+        if current_time_epoch - timestamp < CACHE_DURATION_SECONDS:
+            print(f"--> Phục vụ dự báo từ cache cho: {province_name}")
+            return jsonify(cached_result)
+
+    print(f"--> Cache không có hoặc đã hết hạn. Thực hiện dự báo mới cho: {province_name}")
+
     try:
         province_info = PROVINCE_DATA[province_name]
         history = get_initial_features(province_info['lat'], province_info['lon'])
@@ -153,11 +184,9 @@ def predict():
         
         now_vn = datetime.now(vn_tz)
 
-        # Tạo dự báo theo giờ
         hourly_df = forecast_df[forecast_df['time_vn'] > now_vn].head(24)
         hourly_forecast = []
         for _, row in hourly_df.iterrows():
-            # *** BỔ SUNG 2: Gọi hàm suy luận để lấy mã icon ***
             symbol_code = determine_weather_symbol(row['precipitation_amount'], row['cloud_area_fraction'], row['time_vn'].hour)
             hourly_forecast.append({
                 "time": row['time_vn'].strftime('%H:%M'),
@@ -168,17 +197,14 @@ def predict():
                 "symbol_url": symbol_code 
             })
             
-        # Tạo dự báo theo ngày
         forecast_df['date'] = forecast_df['time_vn'].dt.date
         daily_forecast = []
-        
         unique_days = sorted(forecast_df[forecast_df['date'] >= now_vn.date()]['date'].unique())
         
         for date_val in unique_days[:3]:
             group = forecast_df[forecast_df['date'] == date_val]
             if group.empty: continue
             
-            # *** BỔ SUNG 3: Xác định icon cho ngày ***
             daytime_group = group[(group['time_vn'].dt.hour >= 7) & (group['time_vn'].dt.hour < 17)]
             if not daytime_group.empty:
                 daily_symbols = daytime_group.apply(
@@ -199,11 +225,16 @@ def predict():
                 "symbol_url": daily_symbol_code
             })
 
-        return jsonify({
+        result_json = {
             "province": province_name,
             "hourly": hourly_forecast,
             "daily": daily_forecast
-        })
+        }
+
+        # --- LOGIC CACHE: LƯU KẾT QUẢ VÀO CACHE ---
+        FORECAST_CACHE[province_name] = (result_json, time.time())
+        
+        return jsonify(result_json)
 
     except Exception as e:
         print(f"Lỗi khi thực hiện dự báo cho {province_name}: {e}")
