@@ -110,8 +110,8 @@ def create_features_for_prediction(df_history, province_name, prediction_time):
 def determine_weather_symbol(precipitation, cloud_cover, hour):
     is_day = 6 <= hour < 18
     if precipitation > 2.0: return 'heavyrain'
-    if precipitation > 0.2: return 'rain'
-    if cloud_cover > 80: return 'cloudy'
+    if precipitation > 0.25: return 'rain'
+    if cloud_cover > 80: return 'cloudy_day' if is_day else 'cloudy_night'
     if cloud_cover > 40: return 'partlycloudy_day' if is_day else 'partlycloudy_night'
     return 'clearsky_day' if is_day else 'clearsky_night'
 
@@ -169,7 +169,7 @@ def predict():
                 prediction = MODELS[element].predict(feature_df)[0]
                 if prediction < 0 and element != 'air_temperature':
                     prediction = 0
-                if element == 'relative_humidity':
+                if element == 'relative_humidity' or element == 'cloud_area_fraction':
                     prediction = np.clip(prediction, 0, 100)
                 predicted_values[element] = prediction
             
@@ -194,6 +194,7 @@ def predict():
                 "precipitation": round(row['precipitation_amount'], 2),
                 "wind_speed": round(row['wind_speed'], 1),
                 "relative_humidity": round(row['relative_humidity'], 1),
+                "cloud_area_fraction": round(row['cloud_area_fraction'], 1),
                 "symbol_url": symbol_code 
             })
             
@@ -222,6 +223,7 @@ def predict():
                 "total_precipitation": round(group['precipitation_amount'].sum(), 1),
                 "avg_wind_speed": round(group['wind_speed'].mean(), 1),
                 "avg_humidity": round(group['relative_humidity'].mean(), 1),
+                "avg_cloud_cover": round(group['cloud_area_fraction'].mean(), 1),
                 "symbol_url": daily_symbol_code
             })
 

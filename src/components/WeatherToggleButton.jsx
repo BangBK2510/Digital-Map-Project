@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function WeatherToggleButton({ isWeatherVisible, onToggle, weatherIconSrc }) {
+export default function WeatherToggleButton({ isActive, onToggle, weatherIconSrc }) {
   const topPosition = '145px'; 
 
   return (
@@ -14,7 +14,7 @@ export default function WeatherToggleButton({ isWeatherVisible, onToggle, weathe
         width: '30px',    
         height: '30px',
         padding: '0',     
-        backgroundColor: isWeatherVisible ? '#e6f7ff' : 'white',
+        backgroundColor: isActive ? '#e6f7ff' : 'white',
         border: 'none', 
         borderRadius: '4px', 
         boxShadow: '0 0 0 2px rgba(0,0,0,0.1)', 
@@ -24,8 +24,8 @@ export default function WeatherToggleButton({ isWeatherVisible, onToggle, weathe
         justifyContent: 'center',
         transition: 'background-color 0.2s ease-in-out',
       }}
-      title={isWeatherVisible ? "Ẩn thông tin thời tiết" : "Hiển thị thông tin thời tiết"}
-      aria-pressed={isWeatherVisible}
+      title={isActive ? "Ẩn thông tin thời tiết" : "Hiển thị thông tin thời tiết"}
+      aria-pressed={isActive}
     >
       <img
         src={weatherIconSrc}
@@ -33,7 +33,7 @@ export default function WeatherToggleButton({ isWeatherVisible, onToggle, weathe
         style={{
           width: '18px', 
           height: '18px',
-          opacity: isWeatherVisible ? 1 : 0.7,
+          opacity: isActive ? 1 : 0.7,
         }}
       />
     </button>

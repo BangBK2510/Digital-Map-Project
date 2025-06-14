@@ -6,9 +6,10 @@ import Search from './components/Search';
 import Sidebar from './components/Sidebar';
 import ResetButton from './components/ResetButton';
 import WeatherToggleButton from './components/WeatherToggleButton';
+import HumidityToggleButton from './components/HumidityToggleButton';
+import WindToggleButton from './components/WindToggleButton';
 import HourlyForecast from './components/HourlyForecast';
 
-// Hàm debounce đơn giản
 function debounce(func, delay) {
   let timeout;
   return function executedFunction(...args) {
@@ -22,12 +23,12 @@ function debounce(func, delay) {
   };
 }
 
-// Hàm chuyển đổi mã biểu tượng từ server AI sang URL ảnh
 const getWeatherIconUrl = (symbolCode) => {
     const symbolMap = {
       heavyrain: 'heavy_rain.png',
       rain: 'rainy.png',
-      cloudy: 'cloudy.png',
+      cloudy_day: 'cloudy_day.png',
+      cloudy_night: 'cloudy_night.png',
       partlycloudy_day: 'partly_cloudy.png',
       partlycloudy_night: 'partly_cloudy.png',
       clearsky_day: 'sunny.png',
@@ -47,26 +48,21 @@ export default function App() {
   const [markerDest, setMarkerDest] = useState(null);
   const [markerStart, setMarkerStart] = useState(null);
 
-  // State cho tính năng thời tiết
-  const [isWeatherVisible, setIsWeatherVisible] = useState(false);
+  const [activeLayer, setActiveLayer] = useState('none'); 
+  
   const [allProcessedCities, setAllProcessedCities] = useState([]);
   const [citiesForWeather, setCitiesForWeather] = useState([]); 
   const [weatherData, setWeatherData] = useState([]);
   const [weatherMarkers, setWeatherMarkers] = useState([]);
-  const [isLoadingWeather, setIsLoadingWeather] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [activePopup, setActivePopup] = useState(null);
 
-  // State cho dự báo hàng giờ
   const [hourlyForecastData, setHourlyForecastData] = useState([]);
   const [forecastLocationName, setForecastLocationName] = useState('');
-  const [isLoadingHourly, setIsLoadingHourly] = useState(false); 
 
   const handleSelect = (selectedPlace) => {
     const map = mapRef.current;
-    if (!map || !selectedPlace) {
-      console.error("Bản đồ chưa sẵn sàng hoặc không có địa điểm được chọn");
-      return;
-    }
+    if (!map || !selectedPlace) return;
     const point = [selectedPlace.lon, selectedPlace.lat];
     map.flyTo({ center: point, zoom: 15, essential: true });
     const markerColor = activeInput === 'dest' ? '#d9534f' : '#4285F4';
@@ -86,14 +82,12 @@ export default function App() {
     }
   };
 
-  // --- THAY ĐỔI: Tải danh sách tỉnh/thành phố từ server AI ---
   useEffect(() => {
     const loadProvincesFromServer = async () => {
       try {
         const response = await fetch('http://localhost:5001/api/provinces');
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
-        // Dữ liệu trả về đã có dạng [{ name, lat, lon }, ...]
         setAllProcessedCities(data);
       } catch (error) {
         console.error("Lỗi khi tải danh sách tỉnh thành từ server AI:", error);
@@ -102,31 +96,24 @@ export default function App() {
     loadProvincesFromServer();
   }, []);
 
-  // Hàm cập nhật các tỉnh trong khung nhìn
   const updateCitiesInView = useCallback(() => {
     const map = mapRef.current;
-    if (!map || !isWeatherVisible || allProcessedCities.length === 0) {
+    if (!map || activeLayer === 'none' || allProcessedCities.length === 0) {
       setCitiesForWeather([]);
       return;
     }
-    
     const bounds = map.getBounds();
-    const visibleCities = allProcessedCities.filter(city => {
-      if (typeof city.lat !== 'number' || typeof city.lon !== 'number') return false;
-      return bounds.contains(new maplibregl.LngLat(city.lon, city.lat));
-    });
-
-    // Giới hạn số lượng thành phố để tránh quá tải API
+    const visibleCities = allProcessedCities.filter(city => 
+      bounds.contains(new maplibregl.LngLat(city.lon, city.lat))
+    );
     const MAX_CITIES = 20; 
     const limitedVisibleCities = visibleCities.slice(0, MAX_CITIES);
-    
-    // Chỉ cập nhật state nếu danh sách thành phố thay đổi
     if (JSON.stringify(limitedVisibleCities) !== JSON.stringify(citiesForWeather)) {
       setCitiesForWeather(limitedVisibleCities);
     }
-  }, [mapRef, allProcessedCities, isWeatherVisible, citiesForWeather]);
+  }, [mapRef, allProcessedCities, activeLayer, citiesForWeather]);
   
-  const debouncedUpdateCitiesInView = useCallback(debounce(updateCitiesInView, 1000), [updateCitiesInView]);
+  const debouncedUpdateCitiesInView = useCallback(debounce(updateCitiesInView, 750), [updateCitiesInView]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -140,154 +127,205 @@ export default function App() {
     }
   }, [mapRef, debouncedUpdateCitiesInView]);
   
-  // Hàm lấy dữ liệu dự báo từ server AI cho các tỉnh trong khung nhìn
   const fetchAiForecasts = async (citiesToFetch) => {
     if (citiesToFetch.length === 0) {
-      setWeatherData([]); // Xóa dữ liệu cũ nếu không có tỉnh nào trong view
+      setWeatherData([]);
       return;
     }
-    
-    setIsLoadingWeather(true);
+    setIsLoading(true);
     const forecastPromises = citiesToFetch.map(async (city) => {
       try {
         const response = await fetch(`http://localhost:5001/api/predict?lat=${city.lat}&lon=${city.lon}`);
-        if (!response.ok) {
-          console.error(`Lỗi API cho ${city.name}: Server trả về ${response.status}`);
-          return null;
-        }
+        if (!response.ok) return null;
         const data = await response.json();
         return { ...data, lat: city.lat, lon: city.lon };
-      } catch (error) {
-        console.error(`Lỗi fetch cho ${city.name}:`, error);
-        return null;
-      }
+      } catch (error) { return null; }
     });
-    
     const results = await Promise.all(forecastPromises);
-    setWeatherData(results.filter(r => r !== null && r.daily && r.hourly));
-    setIsLoadingWeather(false);
+    setWeatherData(results.filter(r => r));
+    setIsLoading(false);
   };
   
-  // Trigger việc lấy dữ liệu khi danh sách `citiesForWeather` thay đổi
   useEffect(() => {
-    if (isWeatherVisible) {
+    if (activeLayer !== 'none') {
       fetchAiForecasts(citiesForWeather);
     } else {
       setWeatherData([]);
     }
-  }, [citiesForWeather, isWeatherVisible]);
-
-
-  // Xử lý khi bật/tắt lớp thời tiết
+  }, [citiesForWeather, activeLayer]);
+  
   const handleToggleWeather = () => {
-    const newVisibility = !isWeatherVisible;
-    setIsWeatherVisible(newVisibility);
+    setActiveLayer(prevLayer => (prevLayer === 'weather' ? 'none' : 'weather'));
+  };
 
-    if (newVisibility) {
-      // Khi bật, ngay lập tức cập nhật các tỉnh trong view
-      updateCitiesInView();
-    } else {
-      // Khi tắt, dọn dẹp tất cả
-      setCitiesForWeather([]);
-      setWeatherData([]);
-      setHourlyForecastData([]);
-      setForecastLocationName('');
-      if (activePopup) activePopup.remove();
-      setActivePopup(null);
-    }
+  const handleToggleHumidity = () => {
+    setActiveLayer(prevLayer => (prevLayer === 'humidity' ? 'none' : 'humidity'));
+  };
+
+  const handleToggleWind = () => {
+    setActiveLayer(prevLayer => (prevLayer === 'wind' ? 'none' : 'wind'));
   };
   
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    
     weatherMarkers.forEach(marker => marker.remove());
     setWeatherMarkers([]);
+    if(activePopup) activePopup.remove();
+    setActivePopup(null);
+    setHourlyForecastData([]);
+    setForecastLocationName('');
 
-    if (isWeatherVisible && weatherData.length > 0) {
-      const newMarkers = weatherData.map((dataPoint) => {
-        if (!dataPoint || !dataPoint.daily || dataPoint.daily.length === 0) return null;
-        
-        const el = document.createElement('div');
-        el.className = 'weather-icon-marker';
-        el.style.width = '35px';
-        el.style.height = '35px';
-        el.style.backgroundImage = `url(${getWeatherIconUrl(dataPoint.daily[0].symbol_url)})`;
-        el.style.backgroundSize = 'contain';
-        el.style.cursor = 'pointer';
-
-        const clickHandler = (event) => {
-            event.stopPropagation();
-            if (activePopup) activePopup.remove();
-
-            setHourlyForecastData(dataPoint.hourly || []);
-            setForecastLocationName(dataPoint.province);
-
-            let popupHTML = `<div style="font-family: Arial, sans-serif; font-size: 13px; min-width: 300px; padding: 10px 12px; box-sizing: border-box;"><div style="font-size: 12px; color: #555; text-align: center; margin-bottom: 4px;">Dự báo thời tiết tại</div><h4 style="margin: 0 0 10px 0; padding: 0; text-align: center; border-bottom: 1px solid #eee; padding-bottom: 8px; font-size: 16px;">${dataPoint.province}</h4><div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 5px;">`;
-
-            dataPoint.daily.forEach((day, index) => {
-                let dayName = day.date;
-                if (index === 0) dayName = "Hôm nay";
-                if (index === 1) dayName = "Ngày mai";
-                // --- SỬA LỖI: Thêm điều kiện cho ngày kia ---
-                if (index === 2) dayName = "Ngày kia";
-                
-                popupHTML += `<div style="text-align: center; padding: 5px 2px; border: 1px solid #ddd; border-radius: 4px; flex: 1; min-width: 80px; box-sizing: border-box;">
-                                <div style="font-weight: bold; margin-bottom: 4px; font-size: 12px;">${dayName}</div>
-                                <img src="${getWeatherIconUrl(day.symbol_url)}" alt="${day.symbol_url}" style="width: 30px; height: 30px; margin-bottom: 2px;" />
-                                <div style="font-size: 11px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${day.symbol_url}">${day.symbol_url}</div>
-                                <div style="font-size: 10px;">Min: ${day.temp_min}°C</div>
-                                <div style="font-size: 10px;">Max: ${day.temp_max}°C</div>
-                              </div>`;
-            });
-            
-            popupHTML += `</div><div style="font-size:11px; color:#888; text-align:center; margin-top:8px;">(Dự báo chi tiết theo giờ ở cuối màn hình)</div></div>`;
-
-            const newPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: true, offset: 25 })
-                .setLngLat([dataPoint.lon, dataPoint.lat])
-                .setHTML(popupHTML)
-                .addTo(map);
-            
-            newPopup.on('close', () => {
-                if (activePopup === newPopup) setActivePopup(null);
-                setHourlyForecastData([]);
-                setForecastLocationName('');
-            });
-            setActivePopup(newPopup);
-        };
-        el.addEventListener('click', clickHandler);
-        
-        try {
-          return new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([dataPoint.lon, dataPoint.lat]).addTo(map);
-        } catch (markerError) {
-          console.error(`Lỗi tạo marker cho "${dataPoint.province}":`, markerError);
-          return null;
-        }
-      }).filter(marker => marker !== null);
-      setWeatherMarkers(newMarkers);
+    if (activeLayer === 'none') {
+      setWeatherData([]);
+    } else {
+        updateCitiesInView();
     }
-  }, [isWeatherVisible, weatherData]);
+  }, [activeLayer]);
+
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || activeLayer === 'none' || weatherData.length === 0) return;
+    
+    weatherMarkers.forEach(marker => marker.remove());
+
+    const newMarkers = weatherData.map((dataPoint) => {
+      const el = document.createElement('div');
+      
+      if (activeLayer === 'weather') {
+        el.className = 'weather-icon-marker';
+        el.style.backgroundImage = `url(${getWeatherIconUrl(dataPoint.daily[0].symbol_url)})`;
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (activePopup) activePopup.remove();
+          setHourlyForecastData(dataPoint.hourly || []);
+          setForecastLocationName(dataPoint.province);
+
+          let popupHTML = `<div style="font-family: Arial, sans-serif; font-size: 13px; min-width: 300px; padding: 10px 12px; box-sizing: border-box;"><h4 style="margin: 0 0 10px 0; padding: 0; text-align: center; border-bottom: 1px solid #eee; padding-bottom: 8px; font-size: 16px;">${dataPoint.province}</h4><div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 5px;">`;
+          dataPoint.daily.forEach((day, index) => {
+            let dayName;
+            if (index === 0) dayName = "Hôm nay";
+            else if (index === 1) dayName = "Ngày mai";
+            else if (index === 2) dayName = "Ngày kia";
+            else dayName = day.date;
+            popupHTML += `<div style="text-align: center; padding: 5px 2px; border: 1px solid #ddd; border-radius: 4px; flex: 1; min-width: 80px; box-sizing: border-box;">
+                              <div style="font-weight: bold; margin-bottom: 4px; font-size: 12px;">${dayName}</div>
+                              <img src="${getWeatherIconUrl(day.symbol_url)}" alt="${day.symbol_url}" style="width: 30px; height: 30px; margin-bottom: 2px;" />
+                              <div style="font-size: 11px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${day.symbol_url}">${day.symbol_url}</div>
+                              <div style="font-size: 10px;">Min: ${day.temp_min}°C</div><div style="font-size: 10px;">Max: ${day.temp_max}°C</div></div>`;
+          });
+          popupHTML += `</div><div style="font-size:11px; color:#888; text-align:center; margin-top:8px;">(Dự báo chi tiết theo giờ ở cuối màn hình)</div></div>`;
+          const newPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: true, offset: 25 }).setLngLat([dataPoint.lon, dataPoint.lat]).setHTML(popupHTML).addTo(map);
+          newPopup.on('close', () => { setHourlyForecastData([]); setForecastLocationName(''); });
+          setActivePopup(newPopup);
+        });
+      } else if (activeLayer === 'humidity') {
+        el.className = 'humidity-marker';
+        el.innerHTML = `
+          <img src="/weather_icons/humidity.png" alt="Độ ẩm" style="width: 14px; height: 14px; margin-right: 4px;"/>
+          <span>${Math.round(dataPoint.daily[0].avg_humidity)}%</span>
+        `;
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (activePopup) activePopup.remove();
+          setHourlyForecastData(dataPoint.hourly || []);
+          setForecastLocationName(dataPoint.province);
+        });
+      } else if (activeLayer === 'wind') {
+        el.className = 'wind-marker';
+        el.innerHTML = `
+          <img src="/weather_icons/windspeed.png" alt="Sức gió" style="width: 14px; height: 14px; margin-right: 4px;"/>
+          <span>${Math.round(dataPoint.daily[0].avg_wind_speed)} km/h</span>
+        `;
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (activePopup) activePopup.remove();
+          setHourlyForecastData(dataPoint.hourly || []);
+          setForecastLocationName(dataPoint.province);
+        });
+      }
+      return new maplibregl.Marker({ element: el }).setLngLat([dataPoint.lon, dataPoint.lat]).addTo(map);
+    });
+    setWeatherMarkers(newMarkers);
+  }, [weatherData, activeLayer]);
+
+  // Style cho các marker ---
+  const markerStyles = `
+    .weather-icon-marker {
+      width: 35px;
+      height: 35px;
+      background-size: contain;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .weather-icon-marker:hover {
+        transform: scale(1.2);
+    }
+    .humidity-marker {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 5px 8px;
+        background-color: rgba(230, 247, 255, 0.9);
+        border: 1px solid #91d5ff;
+        border-radius: 15px;
+        font-size: 12px;
+        font-weight: bold;
+        color: #0050b3;
+        cursor: pointer;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+        transition: transform 0.2s, background-color 0.2s;
+        white-space: nowrap;
+    }
+    .humidity-marker:hover {
+        transform: scale(1.1);
+        background-color: #e6f7ff;
+    }
+    .wind-marker {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 5px 8px;
+        background-color: rgb(253, 253, 253);
+        border: 1px solidrgb(185, 185, 185);
+        border-radius: 15px;
+        font-size: 12px;
+        font-weight: bold;
+        color:rgb(32, 34, 36);
+        cursor: pointer;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+        transition: transform 0.2s, background-color 0.2s;
+        white-space: nowrap;
+    }
+    .wind-marker:hover {
+        transform: scale(1.1);
+        background-color: #e6f7ff;
+    }
+  `;
 
   return (
     <>
+      <style>{markerStyles}</style>
       <Search activeInput={activeInput} onSelect={handleSelect}/>
       <MapContainer mapRef={mapRef} />
-      <Sidebar dest={dest} start={start} setActiveInput={setActiveInput}
-        onNavigateCurrent={() => { /* ... */ }}
-      />
+      <Sidebar dest={dest} start={start} setActiveInput={setActiveInput} onNavigateCurrent={() => {}}/>
       <ResetButton mapRef={mapRef} setDest={setDest} setStart={setStart} markerDest={markerDest} setMarkerDest={setMarkerDest} markerStart={markerStart} setMarkerStart={setMarkerStart} imageSrc="/data/circular.png" />
-      <WeatherToggleButton isWeatherVisible={isWeatherVisible} onToggle={handleToggleWeather} weatherIconSrc="/weather_icons/weather-button-icon.png" />
       
-      {isLoadingWeather && isWeatherVisible && (
+      <div className="layer-toggles">
+        <WeatherToggleButton isActive={activeLayer === 'weather'} onToggle={handleToggleWeather} weatherIconSrc="/weather_icons/weather-button-icon.png" />
+        <HumidityToggleButton isActive={activeLayer === 'humidity'} onToggle={handleToggleHumidity} humidityIconSrc="/weather_icons/humidity-button-icon.png" />
+        <WindToggleButton isActive={activeLayer === 'wind'} onToggle={handleToggleWind} windIconSrc="/weather_icons/windspeed-button-icon.png" />
+      </div>
+
+      {isLoading && activeLayer !== 'none' && (
         <div style={{ position: 'fixed', bottom: '150px', right: '20px', backgroundColor: 'white', padding: '10px', borderRadius: '5px', boxShadow: '0 2px 5px rgba(0,0,0,0.2)'}}>
-          Đang tải dữ liệu dự đoán... ({weatherData.length}/{citiesForWeather.length})
+          Đang tải dữ liệu AI...
         </div>
       )}
 
       <HourlyForecast 
         forecastData={hourlyForecastData} 
         locationName={forecastLocationName}
-        isLoading={isLoadingHourly}
+        dataType={activeLayer}
       />
     </>
   );

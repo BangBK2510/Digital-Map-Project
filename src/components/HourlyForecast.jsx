@@ -3,9 +3,10 @@ import React from 'react';
 const symbolMap = {
   heavyrain: 'heavy_rain.png',
   rain: 'rainy.png',
-  cloudy: 'cloudy.png',
+  cloudy_day: 'cloudy_day.png',
+  cloudy_night: 'cloudy_night.png',
   partlycloudy_day: 'partly_cloudy.png',
-  partlycloudy_night: 'partly_cloudy.png',
+  partlycloudy_night: 'partly_cloudy_night.png',
   clearsky_day: 'sunny.png',
   clearsky_night: 'sunny.png',
   default: 'default.png'

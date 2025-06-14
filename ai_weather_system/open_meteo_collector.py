@@ -1,6 +1,9 @@
 # Mục đích: Tải dữ liệu thời tiết lịch sử từ API của Open-Meteo.
 # - Nếu file dữ liệu chưa có, tải toàn bộ lịch sử 3 năm.
-# - Nếu file đã có, tìm ngày gần nhất và chỉ tải dữ liệu mới kể từ đó.
+# - Nếu file đã có, tìm ngày gần nhất và chỉ tải dữ liệu mới kể từ đó, sau đó 
+# xóa các dòng trắng
+# - Nếu dữ liệu đã đủ, báo lên
+# - 10h50 sáng hàng ngày Open_meteo có dữ liệu mới
 # ==============================================================================
 
 import requests
@@ -26,11 +29,25 @@ HOURLY_PARAMS = [
     "wind_speed_10m"
 ]
 
+# Các cột dữ liệu chính để kiểm tra giá trị rỗng
+WEATHER_COLUMNS = [
+    "air_temperature",
+    "relative_humidity",
+    "precipitation_amount",
+    "cloud_area_fraction",
+    "wind_speed"
+]
+
+
 # Tên file output
 OUTPUT_FILENAME = 'vietnam_weather_history.csv' 
 BASE_URL = "https://archive-api.open-meteo.com/v1/archive"
 all_provinces_df_list = []
 existing_df = None
+
+# Lấy dữ liệu đến ngày hiện tại
+end_date = datetime.now().strftime('%Y-%m-%d')
+
 
 # Kiểm tra xem file dữ liệu đã tồn tại chưa
 if os.path.exists(OUTPUT_FILENAME):
@@ -45,28 +62,29 @@ if os.path.exists(OUTPUT_FILENAME):
             # Tìm ngày cuối cùng trong dữ liệu cũ
             last_date = existing_df['time'].max()
             
-            # Ngày bắt đầu sẽ là ngày tiếp theo của ngày cuối cùng
-            start_date = (last_date + timedelta(days=1)).strftime('%Y-%m-%d')
-            end_date = datetime.now().strftime('%Y-%m-%d')
+            # Kiểm tra xem ngày cuối cùng đã hoàn chỉnh chưa (đủ 24h)
+            if last_date.hour == 23:
+                # Nếu đã đủ, bắt đầu từ ngày tiếp theo
+                start_date = (last_date.date() + timedelta(days=1)).strftime('%Y-%m-%d')
+            else:
+                # Nếu chưa đủ, bắt đầu lại từ chính ngày đó để lấy các giờ còn thiếu
+                start_date = last_date.strftime('%Y-%m-%d')
             
             print(f"Sẽ cập nhật dữ liệu từ ngày {start_date} đến {end_date}.")
 
             if pd.to_datetime(start_date) > pd.to_datetime(end_date):
-                print("Dữ liệu đã được cập nhật đến ngày hôm nay. Không cần tải thêm.")
+                print(f"Dữ liệu đã được cập nhật. Không cần tải thêm.")
                 exit()
         else: # File tồn tại nhưng rỗng
             print("File dữ liệu hiện tại rỗng. Bắt đầu tải lại từ đầu.")
-            end_date = datetime.now().strftime('%Y-%m-%d')
             start_date = (datetime.now() - timedelta(days=3*365)).strftime('%Y-%m-%d')
     except pd.errors.EmptyDataError:
         print(f"File '{OUTPUT_FILENAME}' bị rỗng. Bắt đầu tải lại từ đầu.")
-        existing_df = None # Đảm bảo existing_df là None
-        end_date = datetime.now().strftime('%Y-%m-%d')
+        existing_df = None
         start_date = (datetime.now() - timedelta(days=3*365)).strftime('%Y-%m-%d')
 else:
     # Nếu file không tồn tại, lấy dữ liệu của 3 năm gần nhất
     print(f"Không tìm thấy file '{OUTPUT_FILENAME}'. Bắt đầu tải dữ liệu lịch sử 3 năm.")
-    end_date = datetime.now().strftime('%Y-%m-%d')
     start_date = (datetime.now() - timedelta(days=3*365)).strftime('%Y-%m-%d')
 
 # Vòng lặp để lấy dữ liệu cho từng tỉnh
@@ -128,6 +146,12 @@ if all_provinces_df_list:
     else:
         # Nếu không, dữ liệu mới là dữ liệu cuối cùng
         final_df = new_df
+        
+    # Xóa các dòng có giá trị thời tiết rỗng
+    print(f"\nTổng số dòng trước khi xóa dữ liệu rỗng: {len(final_df)}")
+    # Xóa các dòng mà TẤT CẢ các cột thời tiết chính đều rỗng.
+    final_df.dropna(subset=WEATHER_COLUMNS, how='all', inplace=True)
+    print(f"Tổng số dòng sau khi xóa dữ liệu rỗng: {len(final_df)}")
 
     # Sắp xếp lại và loại bỏ các dòng trùng lặp (nếu có)
     # đảm bảo tính duy nhất cho mỗi điểm dữ liệu theo tỉnh và thời gian
