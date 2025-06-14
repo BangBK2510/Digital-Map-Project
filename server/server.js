@@ -52,23 +52,26 @@ app.get('/api/search', async (req, res) => {
   // - Sử dụng ILIKE để tìm kiếm không phân biệt chữ hoa/thường
   // - ST_Y(way) as lat, ST_X(way) as lon: Chuyển đổi tọa độ từ định dạng WKB của PostGIS
   // - Lấy osm_id làm place_id duy nhất
-const sqlQuery = `
-    SELECT 
-      osm_id as place_id,
-      name as display_name,
-      -- ST_Transform(way, 4326) chuyển đổi tọa độ sang WGS 84 (độ)
-      -- Sau đó ST_Y và ST_X mới lấy ra lat/lon chính xác
-      ST_Y(ST_Transform(way, 4326)) as lat,
-      ST_X(ST_Transform(way, 4326)) as lon
-    FROM 
-      planet_osm_point
-    WHERE 
-      name ILIKE $1
-    LIMIT 10; 
+  const sqlQuery = `
+    SELECT
+      place_id,
+      display_name,
+      lat,
+      lon
+    FROM
+      -- Tìm kiếm trực tiếp trên materialized view đã được tối ưu
+      searchable_locations_view
+    WHERE
+      -- Điều kiện tìm kiếm FTS trên cột tsv đã được đánh chỉ mục (index)
+      tsv @@ plainto_tsquery('simple', $1)
+    ORDER BY
+      -- Xếp hạng kết quả dựa trên mức độ liên quan
+      ts_rank(tsv, plainto_tsquery('simple', $1)) DESC
+    LIMIT 5;
   `;
 
   // Thêm dấu % vào hai đầu chuỗi query để tìm kiếm (ví dụ: "ha" -> "%ha%")
-  const searchValue = `%${query}%`;
+  const searchValue = query;
 
   try {
     const client = await pool.connect();
