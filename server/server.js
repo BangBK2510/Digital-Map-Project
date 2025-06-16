@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const fetch = require('node-fetch');
 
 const app = express();
 const PORT = 3001;
@@ -51,7 +52,7 @@ app.get('/api/search', async (req, res) => {
 
   try {
     const client = await pool.connect();
-    // Truyền các giá trị query, limit, và offset vào câu lệnh SQL một cách an toàn
+    // Truyền các giá trị query, limit, và offset vào câu lệnh SQL 
     const result = await client.query(sqlQuery, [query, limitNum, offset]);
     client.release();
     res.json(result.rows);
@@ -60,6 +61,37 @@ app.get('/api/search', async (req, res) => {
     res.status(500).json({ message: 'Lỗi khi truy vấn cơ sở dữ liệu' });
   }
 });
+
+// === Endpoint để lấy dữ liệu chỉ đường ===
+// Endpoint này sẽ nhận tọa độ điểm đầu và điểm cuối, sau đó gọi đến dịch vụ OSRM để lấy thông tin rồi trả về cho client
+app.get('/api/route', async (req, res) => {
+  const { startLon, startLat, endLon, endLat } = req.query;
+
+  if (!startLon || !startLat || !endLon || !endLat) {
+    return res.status(400).json({ message: 'Thiếu tọa độ điểm đầu hoặc điểm cuối.' });
+  }
+
+  // URL của dịch vụ chỉ đường OSRM công cộng
+  const osrmUrl = `http://router.project-osrm.org/route/v1/driving/${startLon},${startLat};${endLon},${endLat}?overview=full&geometries=geojson`;
+
+  try {
+    const response = await fetch(osrmUrl);
+    const data = await response.json();
+
+    if (data.code !== 'Ok') {
+      // Nếu OSRM không tìm được đường đi
+      return res.status(404).json({ message: 'Không tìm thấy đường đi.' });
+    }
+    
+    // Trả về dữ liệu GeoJSON của tuyến đường cho client
+    res.json(data.routes[0].geometry);
+
+  } catch (error) {
+    console.error('Lỗi khi gọi API chỉ đường OSRM:', error);
+    res.status(500).json({ message: 'Lỗi server khi lấy dữ liệu chỉ đường.' });
+  }
+});
+
 
 app.listen(PORT, () => {
   console.log(`Backend proxy đang chạy tại http://localhost:${PORT}`);

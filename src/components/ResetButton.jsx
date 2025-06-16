@@ -1,17 +1,28 @@
 import React from 'react';
 
-export default function ResetButton({ mapRef, setDest, setStart, markerDest, markerStart, setMarkerDest, setMarkerStart, imageSrc }) {
+export default function ResetButton({ mapRef, setDest, setStart, markerDest, markerStart, setMarkerDest, setMarkerStart, imageSrc, setRouteGeoJSON, setIsRoutingActive }) {
   const handleReset = () => {
-    const map = mapRef.current;
-    if (markerDest) markerDest.remove();
-    if (markerStart) markerStart.remove();
-    if (map.getLayer('route')) map.removeLayer('route');
-    if (map.getSource('route')) map.removeSource('route');
-    map.flyTo({ center: [105.804817, 21.028511], zoom: 12 });
-    setDest(null);
+    // Xóa marker điểm bắt đầu
+    if (markerStart) {
+      markerStart.remove();
+      setMarkerStart(null);
+    }
     setStart(null);
-    setMarkerDest(null);
-    setMarkerStart(null);
+    if (markerDest) {
+      markerDest.remove();
+      setMarkerDest(null);
+    }
+    setDest(null);
+
+    // Xóa đường đi trên bản đồ
+    const map = mapRef.current;
+    if (map && map.getSource('route')) {
+      map.getSource('route').setData({ type: 'Feature' });
+    }
+    setRouteGeoJSON(null);
+
+    // Ẩn thanh Sidebar
+    setIsRoutingActive(false);
   };
 
   return (

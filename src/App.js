@@ -47,7 +47,10 @@ export default function App() {
   const [start, setStart] = useState(null);
   const [markerDest, setMarkerDest] = useState(null);
   const [markerStart, setMarkerStart] = useState(null);
+  const [routeGeoJSON, setRouteGeoJSON] = useState(null);
 
+  const [isRoutingActive, setIsRoutingActive] = useState(false);
+  const [isNavigating, setIsNavigating] = useState(false);
   const [activeLayer, setActiveLayer] = useState('none'); 
   
   const [allProcessedCities, setAllProcessedCities] = useState([]);
@@ -60,9 +63,18 @@ export default function App() {
   const [hourlyForecastData, setHourlyForecastData] = useState([]);
   const [forecastLocationName, setForecastLocationName] = useState('');
 
+  // Hàm xử lý khi chọn địa điểm
   const handleSelect = (selectedPlace) => {
     const map = mapRef.current;
     if (!map || !selectedPlace) return;
+    // Kích hoạt giao diện Routing khi chọn 1 địa điểm
+    setIsRoutingActive(true);
+    // Xóa đường đi cũ mỗi khi chọn điểm mới
+    if (map.getSource('route')) {
+      map.getSource('route').setData({ type: 'FeatureCollection', features: [] });
+    }
+      setRouteGeoJSON(null);
+    
     const point = [selectedPlace.lon, selectedPlace.lat];
     map.flyTo({ center: point, zoom: 15, essential: true });
     const markerColor = activeInput === 'dest' ? '#d9534f' : '#4285F4';
@@ -82,6 +94,85 @@ export default function App() {
     }
   };
 
+  // Effect để tự động lấy API đường đi
+  // Chạy mỗi khi điểm bắt đầu hoặc điểm đến thay đổi
+  useEffect(() => {
+    const fetchRoute = async () => {
+        if (!start || !dest) return; // Chỉ chạy khi có cả 2 điểm
+        setIsNavigating(true);
+        const startCoords = start.coordinates;
+        const endCoords = dest.coordinates;
+        try {
+            const response = await fetch(`http://localhost:3001/api/route?startLon=${startCoords[0]}&startLat=${startCoords[1]}&endLon=${endCoords[0]}&endLat=${endCoords[1]}`);
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.message || 'Không thể tìm đường đi.');
+            }
+            const routeData = await response.json();
+            setRouteGeoJSON(routeData); // Lưu dữ liệu đường đi vào state
+        } catch (error) {
+            console.error("Lỗi khi lấy dữ liệu chỉ đường:", error);
+            alert(error.message);
+        } finally {
+          setIsNavigating(false);
+        }
+    };
+    fetchRoute();
+  }, [start, dest]);
+
+  // --- HÀM LẤY VỊ TRÍ HIỆN TẠI LÀM ĐIỂM XUẤT PHÁT ---
+  const handleNavigateFromCurrent = () => {
+    setIsNavigating(true);
+    navigator.geolocation.getCurrentPosition((position) => {
+      const { longitude, latitude } = position.coords;
+      const currentPosInfo = { name: 'Vị trí của bạn', coordinates: [longitude, latitude] };
+      if (markerStart) markerStart.remove();
+      const newMarker = new maplibregl.Marker({ color: '#4285F4' })
+        .setLngLat(currentPosInfo.coordinates)
+        .setPopup(new maplibregl.Popup({ offset: 25 }).setText(currentPosInfo.name))
+        .addTo(mapRef.current);
+      setStart(currentPosInfo);
+      setMarkerStart(newMarker);
+      if (!dest) {
+        setIsNavigating(false);
+      }
+    }, (error) => {
+      console.error("Lỗi khi lấy vị trí người dùng:", error);
+      alert("Không thể lấy được vị trí của bạn. Vui lòng cấp quyền truy cập vị trí.");
+      setIsNavigating(false);
+    }, { enableHighAccuracy: true });
+  };
+  
+  // --- EFFECT ĐỂ VẼ ĐƯỜNG ĐI LÊN BẢN ĐỒ ---
+  // Chạy mỗi khi state routeGeoJSON có dữ liệu mới.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const addRouteLayer = () => {
+        // Thêm layer 'route' vào bản đồ nếu chưa có
+        if (!map.getSource('route')) {
+            map.addSource('route', { type: 'geojson', data: routeGeoJSON || { type: 'Feature' } });
+            map.addLayer({
+                id: 'route-layer', type: 'line', source: 'route',
+                layout: { 'line-join': 'round', 'line-cap': 'round' },
+                paint: { 'line-color': '#3887be', 'line-width': 5, 'line-opacity': 0.75 }
+            });
+        } else {
+             // Nếu đã có, chỉ cần cập nhật dữ liệu
+            map.getSource('route').setData(routeGeoJSON || { type: 'Feature' });
+        }
+    };
+    
+    // Đảm bảo map đã tải xong style trước khi thêm layer
+    if (map.isStyleLoaded()) {
+        addRouteLayer();
+    } else {
+        map.on('load', addRouteLayer);
+    }
+    return () => { if (map) map.off('load', addRouteLayer); };
+  }, [routeGeoJSON]);
+
+  // Effect xử lý thời tiết
   useEffect(() => {
     const loadProvincesFromServer = async () => {
       try {
@@ -305,10 +396,19 @@ export default function App() {
   return (
     <>
       <style>{markerStyles}</style>
+    
       <Search activeInput={activeInput} onSelect={handleSelect}/>
+    
       <MapContainer mapRef={mapRef} />
-      <Sidebar dest={dest} start={start} setActiveInput={setActiveInput} onNavigateCurrent={() => {}}/>
-      <ResetButton mapRef={mapRef} setDest={setDest} setStart={setStart} markerDest={markerDest} setMarkerDest={setMarkerDest} markerStart={markerStart} setMarkerStart={setMarkerStart} imageSrc="/data/circular.png" />
+      {isRoutingActive && (
+          <Sidebar dest={dest} start={start} setActiveInput={setActiveInput} onNavigateCurrent={handleNavigateFromCurrent}/>
+      )}
+      {isNavigating && (
+        <div style={{position: 'fixed', bottom: '20px', right: '20px', backgroundColor: 'white', padding: '10px', borderRadius: '5px', boxShadow: '0 2px 5px rgba(0,0,0,0.2)'}}>
+          Đang điều hướng...
+        </div>
+      )}
+      <ResetButton mapRef={mapRef} setDest={setDest} setStart={setStart} markerDest={markerDest} setMarkerDest={setMarkerDest} markerStart={markerStart} setMarkerStart={setMarkerStart} setRouteGeoJSON={setRouteGeoJSON} setIsRoutingActive={setIsRoutingActive} imageSrc="/data/circular.png"/>
       
       <div className="layer-toggles">
         <WeatherToggleButton isActive={activeLayer === 'weather'} onToggle={handleToggleWeather} weatherIconSrc="/weather_icons/weather-button-icon.png" />
@@ -317,7 +417,7 @@ export default function App() {
       </div>
 
       {isLoading && activeLayer !== 'none' && (
-        <div style={{ position: 'fixed', bottom: '150px', right: '20px', backgroundColor: 'white', padding: '10px', borderRadius: '5px', boxShadow: '0 2px 5px rgba(0,0,0,0.2)'}}>
+        <div style={{ position: 'fixed', bottom: '20px', right: '20px', backgroundColor: 'white', padding: '10px', borderRadius: '5px', boxShadow: '0 2px 5px rgba(0,0,0,0.2)'}}>
           Đang tải dữ liệu AI...
         </div>
       )}

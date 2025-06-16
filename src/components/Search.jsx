@@ -102,7 +102,7 @@ export default function Search({ activeInput, onSelect }) {
   }
 
   return (
-    <div style={{ position: 'absolute', top: '10px', left: activeInput === 'dest' ? '10px' : '350px', zIndex: 1002, width: '300px' }}>
+    <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 1002, width: '300px' }}>
       <input
         value={query}
         onChange={handleChange}
@@ -141,6 +141,7 @@ export default function Search({ activeInput, onSelect }) {
           border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px;
           box-shadow: 0 4px 8px rgba(0,0,0,0.1);
           max-height: 250px; /* Giới hạn chiều cao và cho phép cuộn */
+          zIndex: 10;
           overflow-y: auto;
         }
         .suggestion-item {
