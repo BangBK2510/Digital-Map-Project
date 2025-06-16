@@ -48,6 +48,7 @@ export default function App() {
   const [markerDest, setMarkerDest] = useState(null);
   const [markerStart, setMarkerStart] = useState(null);
   const [routeGeoJSON, setRouteGeoJSON] = useState(null);
+  const [searchKey, setSearchKey] = useState(0);
 
   const [isRoutingActive, setIsRoutingActive] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
@@ -141,6 +142,24 @@ export default function App() {
       alert("Không thể lấy được vị trí của bạn. Vui lòng cấp quyền truy cập vị trí.");
       setIsNavigating(false);
     }, { enableHighAccuracy: true });
+  };
+
+  // Xử lý khi người dùng muốn chọn điểm xuất phát khác
+  const handleNavigateFromAnotherStart = () => {
+    // Xóa marker và thông tin điểm xuất phát cũ
+    if (markerStart) {
+        markerStart.remove();
+        setMarkerStart(null);
+    }
+    setStart(null);
+    // Xóa đường đi cũ trên bản đồ
+    setRouteGeoJSON(null);
+
+    // Bắt buộc thanh search phải re-mount để xóa store nội bộ
+    setSearchKey(prevKey => prevKey + 1);
+
+    // Kích hoạt lại thanh tìm kiếm cho điểm xuất phát
+    setActiveInput('start');
   };
   
   // --- EFFECT ĐỂ VẼ ĐƯỜNG ĐI LÊN BẢN ĐỒ ---
@@ -396,12 +415,11 @@ export default function App() {
   return (
     <>
       <style>{markerStyles}</style>
-    
-      <Search activeInput={activeInput} onSelect={handleSelect}/>
+      <Search key={searchKey} activeInput={activeInput} onSelect={handleSelect}/>
     
       <MapContainer mapRef={mapRef} />
       {isRoutingActive && (
-          <Sidebar dest={dest} start={start} setActiveInput={setActiveInput} onNavigateCurrent={handleNavigateFromCurrent}/>
+          <Sidebar dest={dest} start={start} setActiveInput={setActiveInput} onNavigateCurrent={handleNavigateFromCurrent} onNavigateFromAnotherStart={handleNavigateFromAnotherStart}/>
       )}
       {isNavigating && (
         <div style={{position: 'fixed', bottom: '20px', right: '20px', backgroundColor: 'white', padding: '10px', borderRadius: '5px', boxShadow: '0 2px 5px rgba(0,0,0,0.2)'}}>

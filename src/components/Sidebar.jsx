@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Sidebar({ start, dest, setActiveInput, onNavigateCurrent }) {
+export default function Sidebar({ start, dest, setActiveInput, onNavigateCurrent, onNavigateFromAnotherStart }) {
   const sidebarStyle = {
     position: 'absolute',
     top: '60px',
@@ -68,6 +68,9 @@ export default function Sidebar({ start, dest, setActiveInput, onNavigateCurrent
       </div>
       <button style={buttonStyle} onClick={onNavigateCurrent}>
         Dùng vị trí hiện tại của tôi
+      </button>
+      <button style={buttonStyle} onClick={onNavigateFromAnotherStart}>
+        Điều hướng tại điểm xuất phát khác
       </button>
     </div>
   );
