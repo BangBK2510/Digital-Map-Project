@@ -1,5 +1,4 @@
 const express = require('express');
-const fetch = require('node-fetch'); 
 const cors = require('cors');
 const { Pool } = require('pg');
 
@@ -8,50 +7,33 @@ const PORT = 3001;
 
 // --- CẤU HÌNH KẾT NỐI POSTGRESQL ---
 const pool = new Pool({
-  user: 'postgres',           
+  user: 'postgres',
   host: 'localhost',
-  database: 'OSM',            
-  password: 'Katarina2510',  
+  database: 'OSM',
+  password: 'Katarina2510', // Hãy chắc chắn mật khẩu của bạn là chính xác
   port: 5432,
 });
 
 // Middleware
-app.use(cors({ origin: 'http://localhost:3000' })); // Cho phép request từ React app
+app.use(cors({ origin: 'http://localhost:3000' }));
 
-// === Endpoint cho Proxy Thời tiết ===
-app.get('/api/weather/:cityId', async (req, res) => {
-  const { cityId } = req.params;
-  const wmoApiUrl = `https://worldweather.wmo.int/en/json/${cityId}_en.json`;
-
-  try {
-    const apiResponse = await fetch(wmoApiUrl);
-    if (!apiResponse.ok) {
-      // Chuyển tiếp status code và message lỗi từ WMO nếu có
-      const errorText = await apiResponse.text();
-      console.error(`Lỗi từ WMO API cho cityId ${cityId}: ${apiResponse.status} - ${errorText}`);
-      return res.status(apiResponse.status).json({ message: `Lỗi từ API của WMO: ${apiResponse.statusText}` });
-    }
-    const data = await apiResponse.json();
-    res.json(data);
-  } catch (error) {
-    console.error('Lỗi proxy API thời tiết:', error);
-    res.status(500).json({ message: 'Lỗi server proxy' });
-  }
-});
-
-// === Endpoint cho Tìm kiếm Địa điểm từ PostgreSQL ===
+// === Endpoint cho Tìm kiếm Địa điểm (Đã cập nhật để hỗ trợ phân trang) ===
 app.get('/api/search', async (req, res) => {
-  const query = req.query.q; // Lấy chuỗi tìm kiếm từ query param 'q'
-  
-  if (!query || query.trim().length < 2) { // Yêu cầu ít nhất 2 ký tự để tìm kiếm
-    return res.json([]); // Trả về mảng rỗng nếu query quá ngắn
+  // Lấy các tham số từ query string, gán giá trị mặc định nếu không có
+  const { q: query, page = 1, limit = 10 } = req.query;
+
+  if (!query || query.trim().length < 2) {
+    return res.json([]);
   }
 
-  // Câu truy vấn SQL để tìm kiếm địa điểm
-  // - Tìm kiếm trên cột 'name'
-  // - Sử dụng ILIKE để tìm kiếm không phân biệt chữ hoa/thường
-  // - ST_Y(way) as lat, ST_X(way) as lon: Chuyển đổi tọa độ từ định dạng WKB của PostGIS
-  // - Lấy osm_id làm place_id duy nhất
+  // Chuyển đổi page và limit sang kiểu số nguyên
+  const pageNum = parseInt(page, 10);
+  const limitNum = parseInt(limit, 10);
+
+  // Tính toán OFFSET để bỏ qua các kết quả của những trang trước
+  const offset = (pageNum - 1) * limitNum;
+
+  // Cập nhật câu lệnh SQL để sử dụng LIMIT và OFFSET
   const sqlQuery = `
     SELECT
       place_id,
@@ -59,35 +41,25 @@ app.get('/api/search', async (req, res) => {
       lat,
       lon
     FROM
-      -- Tìm kiếm trực tiếp trên materialized view đã được tối ưu
       searchable_locations_view
     WHERE
-      -- Điều kiện tìm kiếm FTS trên cột tsv đã được đánh chỉ mục (index)
       tsv @@ plainto_tsquery('simple', $1)
     ORDER BY
-      -- Xếp hạng kết quả dựa trên mức độ liên quan
       ts_rank(tsv, plainto_tsquery('simple', $1)) DESC
-    LIMIT 5;
+    LIMIT $2 OFFSET $3; -- Sử dụng tham số cho LIMIT và OFFSET
   `;
-
-  // Thêm dấu % vào hai đầu chuỗi query để tìm kiếm (ví dụ: "ha" -> "%ha%")
-  const searchValue = query;
 
   try {
     const client = await pool.connect();
-    // console.log(`Executing search query for: ${query}`); // Bỏ comment để debug
-    const result = await client.query(sqlQuery, [searchValue]);
-    client.release(); 
-
-    // console.log(`Found ${result.rows.length} results.`); // Bỏ comment để debug
-    res.json(result.rows); // Trả về mảng các kết quả
-
+    // Truyền các giá trị query, limit, và offset vào câu lệnh SQL một cách an toàn
+    const result = await client.query(sqlQuery, [query, limitNum, offset]);
+    client.release();
+    res.json(result.rows);
   } catch (err) {
     console.error('Lỗi truy vấn database:', err.stack);
     res.status(500).json({ message: 'Lỗi khi truy vấn cơ sở dữ liệu' });
   }
 });
-
 
 app.listen(PORT, () => {
   console.log(`Backend proxy đang chạy tại http://localhost:${PORT}`);

@@ -32,7 +32,7 @@ const getWeatherIconUrl = (symbolCode) => {
       partlycloudy_day: 'partly_cloudy.png',
       partlycloudy_night: 'partly_cloudy.png',
       clearsky_day: 'sunny.png',
-      clearsky_night: 'sunny.png', 
+      clearsky_night: 'clearsky_night.png', 
       default: 'default.png'
     };
     const iconName = symbolMap[symbolCode] || symbolMap['default'];
