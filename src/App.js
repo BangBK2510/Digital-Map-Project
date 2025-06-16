@@ -104,7 +104,8 @@ export default function App() {
         const startCoords = start.coordinates;
         const endCoords = dest.coordinates;
         try {
-            const response = await fetch(`http://localhost:3001/api/route?startLon=${startCoords[0]}&startLat=${startCoords[1]}&endLon=${endCoords[0]}&endLat=${endCoords[1]}`);
+            //http://localhost:3001 ~ ${process.env.REACT_APP_NODE_API_URL}
+            const response = await fetch(`${process.env.REACT_APP_NODE_API_URL}/api/route?startLon=${startCoords[0]}&startLat=${startCoords[1]}&endLon=${endCoords[0]}&endLat=${endCoords[1]}`);
             if (!response.ok) {
                 const err = await response.json();
                 throw new Error(err.message || 'Không thể tìm đường đi.');
@@ -195,7 +196,8 @@ export default function App() {
   useEffect(() => {
     const loadProvincesFromServer = async () => {
       try {
-        const response = await fetch('http://localhost:5001/api/provinces');
+        // http://localhost:5001 ~ ${process.env.REACT_APP_PYTHON_API_URL}
+        const response = await fetch('${process.env.REACT_APP_PYTHON_API_URL}/api/provinces');
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
         setAllProcessedCities(data);
@@ -245,7 +247,8 @@ export default function App() {
     setIsLoading(true);
     const forecastPromises = citiesToFetch.map(async (city) => {
       try {
-        const response = await fetch(`http://localhost:5001/api/predict?lat=${city.lat}&lon=${city.lon}`);
+        // http://localhost:5001 ~ ${process.env.REACT_APP_PYTHON_API_URL}
+        const response = await fetch(`${process.env.REACT_APP_PYTHON_API_URL}/api/predict?lat=${city.lat}&lon=${city.lon}`);
         if (!response.ok) return null;
         const data = await response.json();
         return { ...data, lat: city.lat, lon: city.lon };

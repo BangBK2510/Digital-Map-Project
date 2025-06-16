@@ -7,12 +7,20 @@ const app = express();
 const PORT = 3001;
 
 // --- CẤU HÌNH KẾT NỐI POSTGRESQL ---
-const pool = new Pool({
+/*const pool = new Pool({
   user: 'postgres',
   host: 'localhost',
   database: 'OSM',
   password: 'Katarina2510', // Hãy chắc chắn mật khẩu của bạn là chính xác
   port: 5432,
+});*/
+const isProduction = process.env.NODE_ENV === 'production';
+
+const connectionString = process.env.DATABASE_URL;
+
+const pool = new Pool({
+    connectionString: isProduction ? connectionString : "postgresql://postgres:Katarina2510@localhost:5432/OSM",
+    ssl: isProduction ? { rejectUnauthorized: false } : false
 });
 
 // Middleware

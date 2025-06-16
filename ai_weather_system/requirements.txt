@@ -1,0 +1,9 @@
+# ai_weather_system/requirements.txt
+Flask
+gunicorn
+numpy
+pandas
+scikit-learn
+tensorflow
+requests
+openmeteo-requests
