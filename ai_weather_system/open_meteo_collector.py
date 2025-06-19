@@ -24,8 +24,10 @@ except ImportError:
 HOURLY_PARAMS = [
     "temperature_2m",
     "relative_humidity_2m",
+    "dewpoint_2m",
     "precipitation",
     "cloud_cover",
+    "surface_pressure",
     "wind_speed_10m"
 ]
 
@@ -33,8 +35,10 @@ HOURLY_PARAMS = [
 WEATHER_COLUMNS = [
     "air_temperature",
     "relative_humidity",
+    "dewpoint_2m",
     "precipitation_amount",
     "cloud_area_fraction",
+    "surface_pressure",
     "wind_speed"
 ]
 
@@ -118,8 +122,10 @@ for province_name, info in PROVINCE_DATA.items():
             "time": "time",
             "temperature_2m": "air_temperature",
             "relative_humidity_2m": "relative_humidity",
+            "dewpoint_2m": "dewpoint_2m",
             "precipitation": "precipitation_amount",
             "cloud_cover": "cloud_area_fraction",
+            "surface_pressure": "surface_pressure",
             "wind_speed_10m": "wind_speed"
         })
         
